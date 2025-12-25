@@ -2,7 +2,7 @@ from typing import List, Tuple, Dict
 import numpy as np
 from .entity_resolver import EntityResolver
 
-class FB15k237Preprocessor:
+class DataPreprocessor:
     """Preprocess FB15k-237 data for graph construction"""
     
     def __init__(self, resolver: EntityResolver):

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # Data Paths
     TRAIN_DATA_PATH: str = "data/raw/train"
     TEST_DATA_PATH: str = "data/raw/test"
-    VAL_DATA_PATH: str = "data/raw/val"
+    VAL_DATA_PATH: str = "data/raw/valid"
     
     class Config:
         env_file = ".env"
