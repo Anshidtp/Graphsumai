@@ -8,3 +8,5 @@ scikit-learn
 openpyxl
 pyarrow
 python-dotenv
+neo4j-graphrag[sentence-transformers]
+langchain-groq

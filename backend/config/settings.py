@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     NEO4J_PASSWORD: str = "password"
     
     # LLM Configuration
-    OPENAI_API_KEY: str
+    LLM_API_KEY: str
     LLM_MODEL: str = "gpt-4"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     

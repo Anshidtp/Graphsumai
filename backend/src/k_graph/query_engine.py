@@ -3,7 +3,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class FB15k237QueryEngine:
+class QueryEngine:
     """Query engine for FB15k-237 knowledge graph"""
     
     def __init__(self, driver):
