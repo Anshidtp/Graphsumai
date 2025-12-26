@@ -3,7 +3,7 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from typing import Dict, List
-from backend.config.settings import Settings
+from config.settings import Settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ class RAGGenerator:
         self.llm = ChatGroq(
                 model_name=model_name,
                 temperature=temperature,
-                api_key=Settings().LLM_API_KEY
+                api_key=Settings.LLM_API_KEY
             )
         
         self.prompt = ChatPromptTemplate.from_messages([
