@@ -3,7 +3,6 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from typing import Dict, List
-from config.settings import Settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -12,12 +11,12 @@ logger = logging.getLogger(__name__)
 class RAGGenerator:
     """Generate answers using FB15k-237 knowledge graph context"""
     
-    def __init__(self, retriever, model_name: str = "meta-llama/llama-guard-4-12b", temperature: float = 0):
+    def __init__(self, retriever, model_name: str , llm_api_key: str ):
         self.retriever = retriever
         self.llm = ChatGroq(
                 model_name=model_name,
-                temperature=temperature,
-                api_key=Settings.LLM_API_KEY
+                temperature=0.0,
+                api_key=llm_api_key
             )
         
         self.prompt = ChatPromptTemplate.from_messages([

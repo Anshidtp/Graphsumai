@@ -89,9 +89,9 @@ class GraphRAGPipeline:
         
         # Initialize graph constructor
         self.graph_constructor = GraphConstructor(
-            settings.NEO4J_URI,
-            settings.NEO4J_USER,
-            settings.NEO4J_PASSWORD
+            uri=settings.NEO4J_URI,
+            user=settings.NEO4J_USER,
+            password=settings.NEO4J_PASSWORD
         )
         logger.info("✅ Graph constructor initialized")
     
@@ -141,15 +141,15 @@ class GraphRAGPipeline:
         
         # Initialize retriever
         self.retriever = Retriever(
-            self.query_engine,
-            settings.EMBEDDING_MODEL
+            self.query_engine
         )
         logger.info("✅ Retriever initialized")
         
         # Initialize RAG generator
         self.rag_generator = RAGGenerator(
             self.retriever,
-            settings.LLM_MODEL
+            model_name=settings.LLM_MODEL,
+            llm_api_key=settings.LLM_API_KEY
         )
         logger.info("✅ RAG generator initialized")
     

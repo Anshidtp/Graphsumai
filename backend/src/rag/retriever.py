@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 class Retriever:
     """Retrieve context from knowledge graph"""
     
-    def __init__(self, query_engine, model: str = "all-MiniLM-L6-v2",):
+    def __init__(self, query_engine):
         self.query_engine = query_engine
-        self.embeddings = sentence_transformers.SentenceTransformer(model=model)
+        self.embeddings = sentence_transformers.SentenceTransformer("all-MiniLM-L6-v2")
     
     def retrieve_context(self, question: str, k: int = 10, depth: int = 2) -> str:
         """
