@@ -25,14 +25,24 @@ class Settings(BaseSettings):
     TRAIN_FILE: Path = DATA_DIR / "train.txt"
     VALID_FILE: Path = DATA_DIR / "valid.txt"
     TEST_FILE: Path = DATA_DIR / "test.txt"
-    ENTITY_NAMES_FILE: Path = Path("data/entity_names.txt")
+    RESOLVED_DIR: Path = Path("backend/data/resolved")
+    CACHE_FILE: Path = Path("backend/data/entity_cache.json")
 
     # Output
     OUTPUT_DIR: Path = Path("output")
     RESULTS_DIR: Path = OUTPUT_DIR / "results"
     LOGS_DIR: Path = OUTPUT_DIR / "logs"
+
+    BATCH_SIZE: int = 1000
+    MAX_NEIGHBORS: int = 50
+    SIMILARITY_THRESHOLD: float = 0.7
+    WIKIDATA_BATCH_SIZE: int = 50
     
     class Config:
         env_file = ".env"
 
 settings = Settings()
+
+# Create directories
+for directory in [settings.DATA_DIR, settings.RESOLVED_DIR, settings.CACHE_FILE.parent]:
+    directory.mkdir(parents=True, exist_ok=True)
