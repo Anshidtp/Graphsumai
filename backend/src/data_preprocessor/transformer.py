@@ -109,50 +109,43 @@ class DataProcessor:
         
         return df
     
-    def resolve_and_save_triples(self, triples: List[Tuple[str, str, str]], 
-                                 output_file: Path):
+    def resolve_and_save_triplets(self, triples: List[Tuple[str, str, str]], 
+                                   output_file: Path):
         """
-        STEP 1: Resolve all triples and save to CSV
+        STEP 1: Resolve all triples and save READABLE triplets
         
-        Creates: triples_resolved.csv with columns 
-        [head_id, head_name, relation_original, relation_clean, tail_id, tail_name]
+        Creates: triplets_readable.csv with columns [triplet_text, head_name, relation, tail_name]
+        NO IDs - only human-readable text!
         """
         logger.info(f"\n{'='*60}")
-        logger.info("STEP 1: Resolving Triples")
+        logger.info("STEP 1: Creating Readable Triplets")
         logger.info(f"{'='*60}\n")
         
-        resolved_triples = []
+        resolved_triplets = []
         
-        for head, relation, tail in tqdm(triples, desc="Resolving triples"):
+        for head, relation, tail in tqdm(triples, desc="Resolving triplets"):
             head_name = self.resolver.resolve_entity(head)
             tail_name = self.resolver.resolve_entity(tail)
             relation_clean = self.resolver.resolve_relation(relation)
             
-            resolved_triples.append({
-                'head_id': head,
+            # Create readable triplet text
+            triplet_text = f"{head_name} {relation_clean} {tail_name}"
+            
+            resolved_triplets.append({
+                'triplet_text': triplet_text,
                 'head_name': head_name,
-                'relation_original': relation,
-                'relation_clean': relation_clean,
-                'tail_id': tail,
+                'relation': relation_clean,
                 'tail_name': tail_name
             })
         
         # Save to CSV
-        df = pd.DataFrame(resolved_triples)
+        df = pd.DataFrame(resolved_triplets)
         output_file.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(output_file, index=False, encoding='utf-8')
         
-        logger.info(f"\n✅ Saved {len(resolved_triples):,} triples to {output_file}")
+        logger.info(f"\n✅ Saved {len(resolved_triplets):,} readable triplets to {output_file}")
+        logger.info(f"\nExample triplets:")
+        for i in range(min(5, len(resolved_triplets))):
+            logger.info(f"  {resolved_triplets[i]['triplet_text']}")
         
         return df
-    
-    def generate_entity_description(self, entity_id: str, entity_name: str, 
-                                    relations: List[str]) -> str:
-        """Generate description for entity"""
-        if not relations:
-            return f"{entity_name} is an entity in the knowledge graph."
-        
-        rel_sample = relations[:3]
-        rel_text = ', '.join(rel_sample)
-        
-        return f"{entity_name} has relationships including: {rel_text}."
