@@ -1,157 +1,162 @@
 from neo4j import GraphDatabase
-from typing import List, Dict, Tuple
+from typing import List, Dict
 import logging
+from src.k_graph.graph_schema import GraphSchema
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
 
 class GraphConstructor:
-    """Construct Neo4j graph from FB15k-237 data"""
+    """Construct knowledge graph in Neo4j AuraDB"""
     
-    def __init__(self, uri: str, user: str, password: str):
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+    def __init__(self, uri: str, username: str, password: str):
+        logger.info(f"🔄 Connecting to Neo4j at {uri}")
+        self.driver = GraphDatabase.driver(uri, auth=(username, password))
+        self._verify_connection()
+        logger.info("✅ Connected to Neo4j AuraDB")
+    
+    def _verify_connection(self):
+        """Verify database connection"""
+        with self.driver.session() as session:
+            result = session.run("RETURN 1 as num")
+            assert result.single()['num'] == 1
     
     def close(self):
+        """Close database connection"""
         self.driver.close()
+        logger.info("📤 Disconnected from Neo4j")
     
     def clear_database(self):
-        """Clear all nodes and relationships"""
+        """Clear all data"""
+        logger.info("🗑️  Clearing database...")
         with self.driver.session() as session:
             session.run("MATCH (n) DETACH DELETE n")
         logger.info("✅ Database cleared")
     
     def create_schema(self):
-        """Create constraints and indexes"""
+        """Create schema with constraints and indexes"""
+        logger.info("🏗️  Creating schema...")
+        
         with self.driver.session() as session:
-            # Create constraint on Entity.id
-            session.run("""
-                CREATE CONSTRAINT entity_id IF NOT EXISTS
-                FOR (e:Entity) REQUIRE e.id IS UNIQUE
-            """)
+            # Create constraints
+            for query in GraphSchema.get_constraints_queries():
+                try:
+                    session.run(query)
+                except Exception as e:
+                    logger.warning(f"Constraint creation warning: {e}")
             
-            # Create index on Entity.name
-            session.run("""
-                CREATE INDEX entity_name IF NOT EXISTS
-                FOR (e:Entity) ON (e.name)
-            """)
-            
-            # Create index on Entity.freebase_id
-            session.run("""
-                CREATE INDEX entity_freebase_id IF NOT EXISTS
-                FOR (e:Entity) ON (e.freebase_id)
-            """)
+            # Create vector index
+            try:
+                session.run(GraphSchema.get_vector_index_query())
+                logger.info("✅ Vector index created")
+            except Exception as e:
+                logger.warning(f"Vector index warning (may already exist): {e}")
         
         logger.info("✅ Schema created")
     
-    def batch_create_entities(self, nodes: List[Dict], batch_size: int = 5000):
-        """Create entity nodes in batches"""
-        total = len(nodes)
+    def batch_create_graph_from_triplets(self, triplets_data: List[Dict], batch_size: int = 1000):
+        """
+        Create graph from readable triplets
+        
+        Each triplet creates:
+        1. Head entity node (if not exists)
+        2. Tail entity node (if not exists)
+        3. Relationship between them
+        4. Triplet node with embedding
+        """
+        logger.info(f"📝 Creating graph from {len(triplets_data):,} triplets...")
         
         with self.driver.session() as session:
-            for i in range(0, total, batch_size):
-                batch = nodes[i:i+batch_size]
+            for i in tqdm(range(0, len(triplets_data), batch_size), desc="Creating graph"):
+                batch = triplets_data[i:i+batch_size]
                 
                 query = """
-                UNWIND $nodes AS node
-                MERGE (e:Entity {id: node.id})
-                SET e.name = node.name,
-                    e.freebase_id = node.freebase_id,
-                    e.type = node.type,
-                    e.label = node.label
-                """
+                UNWIND $triplets AS t
                 
-                session.run(query, nodes=batch)
-                logger.info(f"Created entities batch {i//batch_size + 1}/{(total + batch_size - 1)//batch_size}")
-        
-        logger.info(f"✅ Created {total} entities")
-    
-    def batch_create_relationships(self, relationships: List[Dict], batch_size: int = 5000):
-        """Create relationships in batches"""
-        total = len(relationships)
-        
-        with self.driver.session() as session:
-            for i in range(0, total, batch_size):
-                batch = relationships[i:i+batch_size]
+                // Create head entity
+                MERGE (head:Entity {name: t.head_name})
+                ON CREATE SET head.aliases = t.head_aliases
                 
-                query = """
-                UNWIND $rels AS rel
-                MATCH (source:Entity {id: rel.source_id})
-                MATCH (target:Entity {id: rel.target_id})
-                CALL apoc.create.relationship(source, rel.type, {
-                    original_relation: rel.original_relation,
-                    readable_name: rel.readable_name
-                }, target) YIELD rel as r
-                RETURN count(r)
+                // Create tail entity
+                MERGE (tail:Entity {name: t.tail_name})
+                ON CREATE SET tail.aliases = t.tail_aliases
+                
+                // Create relationship (use relation as type, but sanitized)
+                CALL apoc.create.relationship(head, t.relation_type, {
+                    relation: t.relation,
+                    readable: t.relation
+                }, tail) YIELD rel
+                
+                // Create triplet node with embedding
+                CREATE (trip:Triplet {
+                    text: t.triplet_text,
+                    embedding: t.embedding
+                })
+                
+                // Connect triplet to entities
+                CREATE (trip)-[:HAS_HEAD]->(head)
+                CREATE (trip)-[:HAS_TAIL]->(tail)
+                
+                RETURN count(*) as created
                 """
                 
                 try:
-                    session.run(query, rels=batch)
+                    session.run(query, triplets=batch)
                 except Exception as e:
-                    # Fallback without APOC
-                    logger.warning(f"APOC not available, using MERGE: {e}")
-                    query_fallback = """
-                    UNWIND $rels AS rel
-                    MATCH (source:Entity {id: rel.source_id})
-                    MATCH (target:Entity {id: rel.target_id})
-                    MERGE (source)-[r:RELATED]->(target)
-                    SET r.type = rel.type,
-                        r.original_relation = rel.original_relation,
-                        r.readable_name = rel.readable_name
+                    # Fallback: create simple relationships without apoc
+                    logger.warning(f"APOC not available, using simple relationships: {e}")
+                    
+                    simple_query = """
+                    UNWIND $triplets AS t
+                    
+                    MERGE (head:Entity {name: t.head_name})
+                    ON CREATE SET head.aliases = t.head_aliases
+                    
+                    MERGE (tail:Entity {name: t.tail_name})
+                    ON CREATE SET tail.aliases = t.tail_aliases
+                    
+                    MERGE (head)-[r:RELATED_TO]->(tail)
+                    SET r.relation = t.relation,
+                        r.readable = t.relation
+                    
+                    CREATE (trip:Triplet {
+                        text: t.triplet_text,
+                        embedding: t.embedding
+                    })
+                    
+                    CREATE (trip)-[:HAS_HEAD]->(head)
+                    CREATE (trip)-[:HAS_TAIL]->(tail)
                     """
-                    session.run(query_fallback, rels=batch)
-                
-                logger.info(f"Created relationships batch {i//batch_size + 1}/{(total + batch_size - 1)//batch_size}")
+                    
+                    session.run(simple_query, triplets=batch)
         
-        logger.info(f"✅ Created {total} relationships")
+        logger.info("✅ Graph created successfully")
     
     def get_statistics(self) -> Dict:
         """Get graph statistics"""
         with self.driver.session() as session:
             stats = {}
             
-            # Node count
-            result = session.run("MATCH (n:Entity) RETURN count(n) as count")
-            stats['entity_count'] = result.single()['count']
+            # Entity count
+            result = session.run("MATCH (e:Entity) RETURN count(e) as count")
+            stats['entities'] = result.single()['count']
+            
+            # Triplet count
+            result = session.run("MATCH (t:Triplet) RETURN count(t) as count")
+            stats['triplets'] = result.single()['count']
             
             # Relationship count
             result = session.run("MATCH ()-[r]->() RETURN count(r) as count")
-            stats['relationship_count'] = result.single()['count']
+            stats['relationships'] = result.single()['count']
             
-            # Relationship types
+            # Sample entities
             result = session.run("""
-                MATCH ()-[r]->()
-                RETURN r.readable_name as relation, count(*) as count
-                ORDER BY count DESC
-                LIMIT 10
+                MATCH (e:Entity)
+                RETURN e.name as name
+                ORDER BY rand()
+                LIMIT 5
             """)
-            stats['top_relations'] = [dict(record) for record in result]
+            stats['sample_entities'] = [record['name'] for record in result]
             
             return stats
-    
-    def build_graph(self, triples: List[Tuple[str, str, str]], 
-                   entities: set, preprocessor, clear: bool = True):
-        """Build complete graph from FB15k-237 data"""
-        logger.info("🔨 Building FB15k-237 knowledge graph...")
-        
-        if clear:
-            self.clear_database()
-        
-        # Create schema
-        self.create_schema()
-        
-        # Create nodes
-        logger.info("Creating entity nodes...")
-        nodes = preprocessor.create_nodes(entities)
-        self.batch_create_entities(nodes)
-        
-        # Create relationships
-        logger.info("Creating relationships...")
-        relationships = preprocessor.create_relationships(triples)
-        self.batch_create_relationships(relationships)
-        
-        # Get statistics
-        stats = self.get_statistics()
-        logger.info("✅ Graph construction completed!")
-        logger.info(f"Statistics: {stats}")
-        
-        return stats

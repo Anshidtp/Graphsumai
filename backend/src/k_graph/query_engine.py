@@ -3,74 +3,65 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class QueryEngine:
-    """Query engine for FB15k-237 knowledge graph"""
+    """Query engine for knowledge graph"""
     
     def __init__(self, driver):
         self.driver = driver
     
-    def find_entity_by_name(self, name: str, limit: int = 10) -> List[Dict]:
-        """Find entities by name"""
+    def search_entities(self, search_term: str, limit: int = 10) -> List[Dict]:
+        """Search entities by name or aliases"""
+        query = """
+        MATCH (e:Entity)
+        WHERE toLower(e.name) CONTAINS toLower($term)
+           OR any(alias IN e.aliases WHERE alias CONTAINS toLower($term))
+        RETURN e.name as name, e.aliases as aliases
+        LIMIT $limit
+        """
+        
         with self.driver.session() as session:
-            query = """
-            MATCH (e:Entity)
-            WHERE e.name CONTAINS $name OR e.freebase_id CONTAINS $name
-            RETURN e
-            LIMIT $limit
-            """
-            result = session.run(query, name=name, limit=limit)
-            return [dict(record['e']) for record in result]
-    
-    def get_entity_neighbors(self, entity_id: str, depth: int = 1) -> List[Dict]:
-        """Get neighbors of an entity"""
-        with self.driver.session() as session:
-            query = f"""
-            MATCH path = (e:Entity {{id: $entity_id}})-[*1..{depth}]-(neighbor)
-            RETURN DISTINCT neighbor, length(path) as distance
-            ORDER BY distance
-            LIMIT 50
-            """
-            result = session.run(query, entity_id=entity_id)
+            result = session.run(query, term=search_term, limit=limit)
             return [dict(record) for record in result]
     
-    def find_path(self, start_id: str, end_id: str, max_depth: int = 5) -> List[Dict]:
-        """Find path between two entities"""
+    def get_entity_triplets(self, entity_name: str, limit: int = 20) -> List[Dict]:
+        """Get all triplets involving an entity"""
+        query = """
+        MATCH (e:Entity {name: $entity_name})
+        MATCH (t:Triplet)-[:HAS_HEAD|HAS_TAIL]->(e)
+        RETURN t.text as triplet_text
+        LIMIT $limit
+        """
+        
         with self.driver.session() as session:
-            query = f"""
-            MATCH (start:Entity {{id: $start_id}}), (end:Entity {{id: $end_id}})
-            MATCH path = shortestPath((start)-[*..{max_depth}]-(end))
-            RETURN nodes(path) as nodes, relationships(path) as rels
-            """
-            result = session.run(query, start_id=start_id, end_id=end_id)
+            result = session.run(query, entity_name=entity_name, limit=limit)
             return [dict(record) for record in result]
     
-    def get_subgraph_for_query(self, query_text: str, k: int = 10) -> str:
-        """Get subgraph relevant to query"""
-        # Search for relevant entities
+    def vector_search_triplets(self, query_embedding: List[float], limit: int = 10) -> List[Dict]:
+        """Vector similarity search on triplet embeddings"""
+        query = """
+        CALL db.index.vector.queryNodes('triplet_embeddings', $limit, $embedding)
+        YIELD node, score
+        RETURN node.text as triplet_text, score
+        ORDER BY score DESC
+        """
+        
         with self.driver.session() as session:
-            search_query = """
-            MATCH (e:Entity)
-            WHERE e.name CONTAINS $query OR e.freebase_id CONTAINS $query
-            WITH e
-            LIMIT $k
-            OPTIONAL MATCH (e)-[r]-(neighbor:Entity)
-            RETURN e, r, neighbor
-            LIMIT 100
-            """
-            
-            result = session.run(search_query, query=query_text, k=k)
-            
-            # Format results
-            context_parts = []
-            for record in result:
-                entity = record['e']
-                context_parts.append(f"Entity: {entity['name']} ({entity['id']})")
-                
-                if record['r'] and record['neighbor']:
-                    rel = record['r']
-                    neighbor = record['neighbor']
-                    context_parts.append(
-                        f"  - {rel.get('readable_name', 'RELATED')} -> {neighbor['name']}"
-                    )
-            
-            return "\n".join(context_parts[:100])
+            try:
+                result = session.run(query, embedding=query_embedding, limit=limit)
+                return [dict(record) for record in result]
+            except Exception as e:
+                logger.error(f"Vector search error: {e}")
+                return []
+    
+    def get_related_entities(self, entity_name: str, limit: int = 20) -> List[Dict]:
+        """Get entities related to given entity"""
+        query = """
+        MATCH (e:Entity {name: $entity_name})-[r]-(related:Entity)
+        RETURN DISTINCT related.name as name, type(r) as relation, r.readable as readable
+        LIMIT $limit
+        """
+        
+        with self.driver.session() as session:
+            result = session.run(query, entity_name=entity_name, limit=limit)
+            return [dict(record) for record in result]
