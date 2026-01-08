@@ -6,7 +6,6 @@ class QueryRequest(BaseModel):
     """Request model for query endpoint"""
     query: str = Field(..., description="Natural language query")
     top_k: int = Field(10, description="Number of entities to retrieve", ge=1, le=50)
-    depth: int = Field(2, description="Graph traversal depth", ge=1, le=3)
 
 
 class QueryResponse(BaseModel):

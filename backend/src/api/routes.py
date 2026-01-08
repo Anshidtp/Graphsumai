@@ -37,8 +37,7 @@ async def query_knowledge_graph(request: QueryRequest):
         # Retrieve context
         retrieval_result = retriever.retrieve(
             request.query,
-            top_k=request.top_k,
-            depth=request.depth
+            top_k=request.top_k
         )
         
         # Generate answer
