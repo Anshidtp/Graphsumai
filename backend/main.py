@@ -1,337 +1,344 @@
 import logging
 import argparse
 from pathlib import Path
+import uvicorn
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import pandas as pd
 
-# Import all components
 from config.settings import settings
 from src.data_preprocessor.loader import DataLoader
 from src.data_preprocessor.entity_resolver import EntityResolver
-from src.data_preprocessor.transformer import DataPreprocessor
-from src.k_graph.graph_builder import GraphConstructor
-from src.k_graph.query_engine import QueryEngine
-from src.rag.retriever import Retriever
-from src.rag.generator import RAGGenerator
-# from backend.src.evaluation.link_prediction import LinkPredictionEvaluator
-# from backend.src.evaluation.rag_evaluator import RAGEvaluator
+from src.data_preprocessor.transformer import DataProcessor
+from src.data_preprocessor.graph_enricher import GraphEnricher
+from src.vectorization.embedder import Embedder
+from src.k_graph.graph_builder import GraphConstructor  
+from src.k_graph.query_engine import QueryEngine as GraphQueryEngine
+from src.rag.retriever import KnowledgeGraphRetriever
+from src.rag.generator import RagGenerator as LlamaGenerator
+from src.api.routes import router, set_dependencies
 
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    # handlers=[
-    #     logging.FileHandler(settings.LOGS_DIR / 'pipeline.log'),
-    #     logging.StreamHandler()
-    # ]
 )
 logger = logging.getLogger(__name__)
 
 
 class GraphRAGPipeline:
-    """Complete pipeline for FB15k-237 Graph RAG"""
+    """Complete production pipeline with triplet embeddings"""
     
     def __init__(self):
         self.loader = None
         self.resolver = None
-        self.preprocessor = None
-        self.graph_constructor = None
+        self.processor = None
+        self.enricher = None
+        self.embedder = None
+        self.constructor = None
         self.query_engine = None
         self.retriever = None
-        self.rag_generator = None
-        
-    def step1_load_data(self):
+        self.generator = None
+    
+    def step1_resolve_entities(self):
         """
-        Step 1: Load FB15k-237 Dataset
-        
-        - Loads train.txt, valid.txt, test.txt
-        - Parses tab-separated triples
-        - Collects unique entities and relations
+        STEP 1: Resolve all Freebase IDs to readable names
+        Saves: 
+        - entities_resolved.csv
+        - triplets_readable.csv (NO IDs, only human-readable text)
         """
-        logger.info("=" * 60)
-        logger.info("STEP 1: Loading FB15k-237 Dataset")
-        logger.info("=" * 60)
+        logger.info("\n" + "="*70)
+        logger.info("STEP 1: ENTITY RESOLUTION WITH WIKIDATA")
+        logger.info("="*70)
         
+        # Load data
         self.loader = DataLoader(settings.DATA_DIR)
-        triples = self.loader.load_all_splits()
+        self.loader.load_all()
         
-        # Show statistics
-        entity_stats = self.loader.get_entity_statistics()
-        relation_stats = self.loader.get_relation_statistics()
+        # Initialize resolver
+        self.resolver = EntityResolver(str(settings.CACHE_FILE))
+        self.processor = DataProcessor(self.resolver)
         
-        logger.info(f"\nEntity Statistics:")
-        logger.info(f"  Total entities: {entity_stats['total_entities']}")
-        logger.info(f"  Total relations: {entity_stats['total_relations']}")
-        
-        logger.info(f"\nTop 5 Relations:")
-        for rel, count in relation_stats['most_common_relations'][:5]:
-            logger.info(f"  {rel}: {count}")
-        
-        return triples
-    
-    def step2_initialize_components(self):
-        """
-        Step 2: Initialize Components
-        
-        - Entity resolver (for readable names)
-        - Preprocessor (clean and format data)
-        - Graph constructor (Neo4j connection)
-        """
-        logger.info("\n" + "=" * 60)
-        logger.info("STEP 2: Initializing Components")
-        logger.info("=" * 60)
-        
-        # Initialize entity resolver
-        self.resolver = EntityResolver(settings.ENTITY_NAMES_FILE)
-        logger.info("✅ Entity resolver initialized")
-        
-        # Initialize preprocessor
-        self.preprocessor = DataPreprocessor(self.resolver)
-        logger.info("✅ Preprocessor initialized")
-        
-        # Initialize graph constructor
-        self.graph_constructor = GraphConstructor(
-            uri=settings.NEO4J_URI,
-            user=settings.NEO4J_USER,
-            password=settings.NEO4J_PASSWORD
-        )
-        logger.info("✅ Graph constructor initialized")
-    
-    def step3_build_graph(self, use_split: str = 'train'):
-        """
-        Step 3: Build Knowledge Graph in Neo4j
-        
-        - Creates entity nodes
-        - Creates relationships from triples
-        - Builds indexes for fast querying
-        """
-        logger.info("\n" + "=" * 60)
-        logger.info(f"STEP 3: Building Knowledge Graph ({use_split} split)")
-        logger.info("=" * 60)
-        
-        triples = self.loader.triples[use_split]
-        entities = self.loader.entities
-        
-        stats = self.graph_constructor.build_graph(
-            triples, 
-            entities, 
-            self.preprocessor,
-            clear=True
+        # Resolve entities
+        entities_file = settings.RESOLVED_DIR / "entities_resolved.csv"
+        self.processor.resolve_and_save_entities(
+            self.loader.entities,
+            entities_file
         )
         
-        logger.info(f"\nGraph built successfully:")
-        logger.info(f"  Entities: {stats['entity_count']}")
-        logger.info(f"  Relationships: {stats['relationship_count']}")
-        
-        return stats
-    
-    def step4_initialize_rag(self):
-        """
-        Step 4: Initialize RAG System
-        
-        - Query engine for graph traversal
-        - Retriever for context extraction
-        - Generator for answer synthesis
-        """
-        logger.info("\n" + "=" * 60)
-        logger.info("STEP 4: Initializing RAG System")
-        logger.info("=" * 60)
-        
-        # Initialize query engine
-        self.query_engine = QueryEngine(self.graph_constructor.driver)
-        logger.info("✅ Query engine initialized")
-        
-        # Initialize retriever
-        self.retriever = Retriever(
-            self.query_engine
+        # Resolve triplets (NO IDs in output!)
+        triplets_file = settings.RESOLVED_DIR / "triplets_readable.csv"
+        self.processor.resolve_and_save_triplets(
+            self.loader.triples['train'],
+            triplets_file
         )
-        logger.info("✅ Retriever initialized")
         
-        # Initialize RAG generator
-        self.rag_generator = RAGGenerator(
-            self.retriever,
+        logger.info("\n✅ Step 1 Complete! Files saved:")
+        logger.info(f"  - {entities_file}")
+        logger.info(f"  - {triplets_file}")
+        
+        # Optional: Enrich with LLM-extracted knowledge
+        if settings.LLM_API_KEY:
+            logger.info("\n🔄 Step 1.5: ENRICHING GRAPH WITH LLM KNOWLEDGE")
+            self.enricher = GraphEnricher(settings.LLM_API_KEY, settings.LLM_MODEL)
+            
+            # Load the resolved data
+            entities_df = pd.read_csv(entities_file)
+            triplets_df = pd.read_csv(triplets_file)
+            
+            # Enrich a sample of entities
+            enriched_df = self.enricher.batch_enrich_entities(
+                entities_df, triplets_df, sample_size=50
+            )
+            
+            if not enriched_df.empty:
+                # Save enriched triplets
+                enriched_file = settings.RESOLVED_DIR / "triplets_enriched.csv"
+                enriched_df.to_csv(enriched_file, index=False)
+                logger.info(f"  - {enriched_file} ({len(enriched_df)} new triplets)")
+                
+                # Merge with original triplets for downstream processing
+                combined_triplets = pd.concat([triplets_df, enriched_df], ignore_index=True)
+                combined_file = settings.RESOLVED_DIR / "triplets_combined.csv"
+                combined_triplets.to_csv(combined_file, index=False)
+                logger.info(f"  - {combined_file} ({len(combined_triplets)} total triplets)")
+    
+    def step2_build_graph(self, clear_existing: bool = True):
+        """
+        STEP 2: Build knowledge graph with triplet embeddings
+        
+        Process:
+        1. Load readable triplets
+        2. Generate embeddings for each triplet sentence
+        3. Create graph with entities, relationships, and triplet nodes
+        """
+        logger.info("\n" + "="*70)
+        logger.info("STEP 2: BUILDING KNOWLEDGE GRAPH WITH TRIPLET EMBEDDINGS")
+        logger.info("="*70)
+        
+        # Load resolved triplets (use combined if available)
+        combined_file = settings.RESOLVED_DIR / "triplets_combined.csv"
+        triplets_file = combined_file if combined_file.exists() else settings.RESOLVED_DIR / "triplets_readable.csv"
+        
+        if not triplets_file.exists():
+            logger.error("❌ triplets_readable.csv not found. Run step1 first!")
+            return
+        
+        triplets_df = pd.read_csv(triplets_file)
+        logger.info(f"📂 Loaded {len(triplets_df):,} readable triplets")
+        
+        # Filter out rows with missing head_name or tail_name
+        triplets_df = triplets_df.dropna(subset=['head_name', 'tail_name'])
+        triplets_df['head_name'] = triplets_df['head_name'].astype(str)
+        triplets_df['tail_name'] = triplets_df['tail_name'].astype(str)
+        logger.info(f"📂 After filtering: {len(triplets_df):,} valid triplets")
+        self.embedder = Embedder(settings.EMBEDDING_MODEL, cache_dir=settings.EMBEDDING_CACHE_DIR)
+        self.constructor = GraphConstructor(
+            settings.NEO4J_URI,
+            settings.NEO4J_USER,
+            settings.NEO4J_PASSWORD
+        )
+        
+        # Clear and create schema
+        if clear_existing:
+            self.constructor.clear_database()
+        self.constructor.create_schema()
+        
+        # Generate embeddings for triplet texts
+        triplet_texts = triplets_df['triplet_text'].tolist()
+        embeddings = self.embedder.batch_embed_triplets(triplet_texts)
+        
+        # Prepare graph data
+        logger.info("\n📝 Preparing graph data...")
+        graph_data = []
+        
+        for i, row in triplets_df.iterrows():
+            # Sanitize relation for Cypher
+            relation_type = row['relation'].upper().replace(' ', '_').replace('-', '_')
+            
+            graph_data.append({
+                'triplet_text': row['triplet_text'],
+                'head_name': row['head_name'],
+                'tail_name': row['tail_name'],
+                'relation': row['relation'],
+                'relation_type': relation_type,
+                'embedding': embeddings[i].tolist(),
+                'head_aliases': row['head_name'].lower().split(),
+                'tail_aliases': row['tail_name'].lower().split()
+            })
+        
+        # Create graph
+        self.constructor.batch_create_graph_from_triplets(graph_data, settings.BATCH_SIZE)
+        
+        # Get statistics
+        stats = self.constructor.get_statistics()
+        
+        logger.info("\n📊 Graph Construction Complete!")
+        logger.info(f"  Entities: {stats['entities']:,}")
+        logger.info(f"  Triplets: {stats['triplets']:,}")
+        logger.info(f"  Relationships: {stats['relationships']:,}")
+        logger.info(f"\n  Sample entities: {', '.join(stats['sample_entities'])}")
+        
+        logger.info("\n✅ Step 2 Complete!")
+    
+    def step3_initialize_rag(self):
+        """
+        STEP 3: Initialize RAG system
+        """
+        logger.info("\n" + "="*70)
+        logger.info("STEP 3: INITIALIZING RAG SYSTEM")
+        logger.info("="*70)
+        
+        if not self.embedder:
+            self.embedder = Embedder(settings.EMBEDDING_MODEL)
+        
+        if not self.constructor:
+            self.constructor = GraphConstructor(
+                settings.NEO4J_URI,
+                settings.NEO4J_USER,
+                settings.NEO4J_PASSWORD
+            )
+        
+        self.query_engine = GraphQueryEngine(self.constructor.driver)
+        self.retriever = KnowledgeGraphRetriever(
+            self.query_engine,
+            self.embedder
+        )
+        self.generator = LlamaGenerator(
             model_name=settings.LLM_MODEL,
-            llm_api_key=settings.LLM_API_KEY
+            llm_api_key=settings.LLM_API_KEY,
+            retriever=self.retriever
         )
-        logger.info("✅ RAG generator initialized")
+        
+        logger.info("✅ RAG system initialized")
+        logger.info("  - Query Engine: Ready")
+        logger.info("  - Retriever: Ready")
+        logger.info("  - Generator: Ready")
     
-    def step5_test_queries(self):
+    def step4_test_query(self, query: str):
         """
-        Step 5: Test with Sample Queries
-        
-        - Run example questions
-        - Show retrieval and generation process
+        STEP 4: Test the system with a query
         """
-        logger.info("\n" + "=" * 60)
-        logger.info("STEP 5: Testing Sample Queries")
-        logger.info("=" * 60)
+        logger.info("\n" + "="*70)
+        logger.info(f"TESTING QUERY: {query}")
+        logger.info("="*70)
         
-        # Get some sample entities
-        sample_triples = self.loader.triples['train'][:5]
+        if not self.retriever or not self.generator:
+            self.step3_initialize_rag()
         
-        test_questions = []
-        for head, relation, tail in sample_triples:
-            head_name = self.resolver.resolve_entity(head)
-            rel_name = self.resolver.resolve_relation(relation)
-            
-            question = f"What is the {rel_name} of {head_name}?"
-            test_questions.append(question)
+        # Retrieve
+        retrieval_result = self.retriever.retrieve(query)
         
-        # Test queries
-        for question in test_questions:
-            logger.info(f"\n❓ Question: {question}")
-            result = self.rag_generator.generate(question)
-            logger.info(f"💡 Answer: {result['answer']}")
-            logger.info("-" * 60)
+        # Generate
+        generation_result = self.generator.generate(
+            query,
+            retrieval_result['context']
+        )
+        
+        logger.info(f"\n💡 ANSWER:")
+        logger.info(f"{generation_result['answer']}")
+        logger.info(f"\n📊 METADATA:")
+        logger.info(f"  Found triplets: {retrieval_result['metadata']['found']}")
+        
+        return generation_result
     
-    # def step6_evaluate_link_prediction(self):
-    #     """
-    #     Step 6: Evaluate Link Prediction
+    def step5_run_api(self):
+        """
+        STEP 5: Run FastAPI server
+        """
+        logger.info("\n" + "="*70)
+        logger.info("STEP 5: STARTING API SERVER")
+        logger.info("="*70)
         
-    #     - Standard KB completion metrics
-    #     - MRR, Hits@1, Hits@3, Hits@10
-    #     """
-    #     logger.info("\n" + "=" * 60)
-    #     logger.info("STEP 6: Evaluating Link Prediction")
-    #     logger.info("=" * 60)
+        # Initialize RAG if not already done
+        if not self.query_engine:
+            self.step3_initialize_rag()
         
-    #     evaluator = LinkPredictionEvaluator(self.query_engine)
+        # Set dependencies for routes
+        set_dependencies(self.query_engine, self.retriever, self.generator)
         
-    #     test_triples = self.loader.triples['test']
-    #     entities = self.loader.entities
+        # Create FastAPI app
+        app = FastAPI(
+            title="Graph RAG API",
+            description="Production Graph RAG with Embeddings",
+            version="2.0.0"
+        )
         
-    #     metrics = evaluator.evaluate_test_set(
-    #         test_triples,
-    #         entities,
-    #         k_values=[1, 3, 10]
-    #     )
+        # Add CORS
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
         
-    #     logger.info(f"\nLink Prediction Metrics:")
-    #     for metric, value in metrics.items():
-    #         logger.info(f"  {metric}: {value:.4f}")
+        # Include router
+        app.include_router(router, prefix="/api/v1", tags=["Graph RAG"])
         
-    #     return metrics
-    
-    # def step7_evaluate_rag(self):
-    #     """
-    #     Step 7: Evaluate RAG System
+        logger.info("\n🌐 API Server Configuration:")
+        logger.info(f"  Host: {settings.API_HOST}")
+        logger.info(f"  Port: {settings.API_PORT}")
+        logger.info(f"  Docs: http://localhost:{settings.API_PORT}/docs")
         
-    #     - Generate QA pairs from triples
-    #     - Evaluate answer accuracy
-    #     """
-    #     logger.info("\n" + "=" * 60)
-    #     logger.info("STEP 7: Evaluating RAG System")
-    #     logger.info("=" * 60)
-        
-    #     rag_evaluator = RAGEvaluator(self.rag_generator)
-        
-    #     # Create QA pairs from validation set
-    #     qa_pairs = rag_evaluator.create_qa_from_triples(
-    #         self.loader.triples['valid'],
-    #         self.resolver,
-    #         n_samples=20
-    #     )
-        
-    #     metrics = rag_evaluator.evaluate(qa_pairs)
-        
-    #     logger.info(f"\nRAG Evaluation Metrics:")
-    #     logger.info(f"  Accuracy: {metrics['accuracy']:.2%}")
-    #     logger.info(f"  Correct: {metrics['correct']}/{metrics['total']}")
-        
-    #     # Save results
-    #     rag_evaluator.save_results(settings.RESULTS_DIR / 'rag_results.csv')
-        
-    #     return metrics
-    
-    def run_full_pipeline(self):
-        """Run complete end-to-end pipeline"""
-        logger.info("\n" + "🚀" * 30)
-        logger.info("Starting FB15k-237 Graph RAG Pipeline")
-        logger.info("🚀" * 30 + "\n")
-        
-        try:
-            # Execute all steps
-            self.step1_load_data()
-            self.step2_initialize_components()
-            self.step3_build_graph()
-            self.step4_initialize_rag()
-            self.step5_test_queries()
-            
-            # Evaluation (optional, can be slow)
-            # self.step6_evaluate_link_prediction()
-            # self.step7_evaluate_rag()
-            
-            logger.info("\n" + "✅" * 30)
-            logger.info("Pipeline completed successfully!")
-            logger.info("✅" * 30)
-            
-        except Exception as e:
-            logger.error(f"Pipeline failed: {e}", exc_info=True)
-            raise
-        
-        finally:
-            if self.graph_constructor:
-                self.graph_constructor.close()
-    
-    def interactive_query_mode(self):
-        """Interactive mode for querying the graph"""
-        logger.info("\n🤖 Interactive Query Mode (type 'exit' to quit)")
-        
-        while True:
-            try:
-                question = input("\nQuestion: ").strip()
-                
-                if question.lower() in ['exit', 'quit', 'q']:
-                    break
-                
-                if not question:
-                    continue
-                
-                result = self.rag_generator.generate(question)
-                print(f"\nAnswer: {result['answer']}\n")
-                print("-" * 60)
-                
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                logger.error(f"Error: {e}")
-        
-        logger.info("Goodbye!")
+        # Run server
+        uvicorn.run(
+            app,
+            host=settings.API_HOST,
+            port=settings.API_PORT,
+            log_level="info"
+        )
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Graph RAG System')
-    parser.add_argument('--mode', 
-                       choices=['full', 'build', 'query', 'evaluate'],
-                       default='full',
-                       help='Execution mode')
-    parser.add_argument('--split',
-                       choices=['train', 'valid', 'test'],
-                       default='train',
-                       help='Dataset split to use for graph building')
+    parser = argparse.ArgumentParser(
+        description="FB15k-237 Complete Graph RAG System"
+    )
+    parser.add_argument(
+        '--step',
+        type=int,
+        choices=[1, 2, 3, 4, 5],
+        help='Execute specific step'
+    )
+    parser.add_argument('--query', type=str, help='Test query (for step 4)')
+    parser.add_argument('--clear', action='store_true', help='Clear existing graph (step 2)')
+    parser.add_argument('--all', action='store_true', help='Run all steps')
     
     args = parser.parse_args()
     
     pipeline = GraphRAGPipeline()
     
-    if args.mode == 'full':
-        pipeline.run_full_pipeline()
+    try:
+        if args.all:
+            # Run complete pipeline
+            pipeline.step1_resolve_entities()
+            pipeline.step2_build_graph(clear_existing=True)
+            pipeline.step3_initialize_rag()
+            pipeline.step4_test_query("What are some professions in the knowledge graph?")
+            pipeline.step5_run_api()
+        
+        elif args.step == 1:
+            pipeline.step1_resolve_entities()
+        
+        elif args.step == 2:
+            pipeline.step2_build_graph(clear_existing=args.clear)
+        
+        elif args.step == 3:
+            pipeline.step3_initialize_rag()
+        
+        elif args.step == 4:
+            query = args.query or "What are some entities in the knowledge graph?"
+            pipeline.step4_test_query(query)
+        
+        elif args.step == 5:
+            pipeline.step5_run_api()
+        
+        else:
+            parser.print_help()
     
-    elif args.mode == 'build':
-        pipeline.step1_load_data()
-        pipeline.step2_initialize_components()
-        pipeline.step3_build_graph(use_split=args.split)
-    
-    elif args.mode == 'query':
-        pipeline.step1_load_data()
-        pipeline.step2_initialize_components()
-        pipeline.step4_initialize_rag()
-        pipeline.interactive_query_mode()
-    
-    elif args.mode == 'evaluate':
-        pipeline.step1_load_data()
-        pipeline.step2_initialize_components()
-        pipeline.step4_initialize_rag()
-        # pipeline.step6_evaluate_link_prediction()  # Uncomment for full eval
-        # pipeline.step7_evaluate_rag()
+    finally:
+        if pipeline.constructor:
+            pipeline.constructor.close()
 
 
 if __name__ == "__main__":

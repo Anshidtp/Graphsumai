@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     
     # LLM Configuration
     LLM_API_KEY: str = os.getenv("LLM_API_KEY")
-    LLM_MODEL: str = "meta-llama/llama-guard-4-12b"
+    LLM_MODEL: str = "meta-llama/llama-4-scout-17b-16e-instruct"
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
     
     # API Configuration
@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     TEST_FILE: Path = DATA_DIR / "test.txt"
     RESOLVED_DIR: Path = Path("backend/data/resolved")
     CACHE_FILE: Path = Path("backend/data/entity_cache.json")
+    EMBEDDING_CACHE_DIR: Path = Path("backend/data/embedding_cache")
 
     # Output
     OUTPUT_DIR: Path = Path("output")
@@ -44,5 +45,5 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # Create directories
-for directory in [settings.DATA_DIR, settings.RESOLVED_DIR, settings.CACHE_FILE.parent]:
+for directory in [settings.DATA_DIR, settings.RESOLVED_DIR, settings.CACHE_FILE.parent, settings.EMBEDDING_CACHE_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
