@@ -112,21 +112,33 @@ class DataProcessor:
     def resolve_and_save_triplets(self, triples: List[Tuple[str, str, str]], 
                                    output_file: Path):
         """
-        STEP 1: Resolve all triples and save READABLE triplets
+        Resolve triples and save DEDUPLICATED readable triplets
         
-        Creates: triplets_readable.csv with columns [triplet_text, head_name, relation, tail_name]
-        NO IDs - only human-readable text!
+        IMPROVEMENTS:
+        1. Deduplicates based on triplet text
+        2. Normalizes relation names
+        3. Creates canonical triplet format
         """
         logger.info(f"\n{'='*60}")
-        logger.info("STEP 1: Creating Readable Triplets")
+        logger.info("STEP 1: Creating Deduplicated Readable Triplets")
         logger.info(f"{'='*60}\n")
         
         resolved_triplets = []
+        seen_triplets = set()  
         
         for head, relation, tail in tqdm(triples, desc="Resolving triplets"):
             head_name = self.resolver.resolve_entity(head)
             tail_name = self.resolver.resolve_entity(tail)
             relation_clean = self.resolver.resolve_relation(relation)
+            
+            # Create canonical triplet (lowercase for dedup)
+            canonical = f"{head_name.lower()}|{relation_clean.lower()}|{tail_name.lower()}"
+            
+            # Skip if duplicate
+            if canonical in seen_triplets:
+                continue
+            
+            seen_triplets.add(canonical)
             
             # Create readable triplet text
             triplet_text = f"{head_name} {relation_clean} {tail_name}"
@@ -143,7 +155,10 @@ class DataProcessor:
         output_file.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(output_file, index=False, encoding='utf-8')
         
-        logger.info(f"\n✅ Saved {len(resolved_triplets):,} readable triplets to {output_file}")
+        duplicates_removed = len(triples) - len(resolved_triplets)
+        
+        logger.info(f"\n✅ Saved {len(resolved_triplets):,} unique triplets")
+        logger.info(f"   Removed {duplicates_removed:,} duplicates")
         logger.info(f"\nExample triplets:")
         for i in range(min(5, len(resolved_triplets))):
             logger.info(f"  {resolved_triplets[i]['triplet_text']}")

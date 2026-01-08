@@ -10,3 +10,4 @@ pyarrow
 python-dotenv
 neo4j-graphrag[sentence-transformers]
 langchain-groq
+LLMGraphTransformer == 0.0.2
