@@ -1,4 +1,3 @@
-#from langchain.chat_models import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -8,19 +7,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class RAGGenerator:
+class RagGenerator:
     """Generate answers using FB15k-237 knowledge graph context"""
     
     def __init__(self, retriever, model_name: str , llm_api_key: str ):
         self.retriever = retriever
         self.llm = ChatGroq(
                 model_name=model_name,
-                temperature=0.0,
+                temperature=0.7,
                 api_key=llm_api_key
             )
         
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an AI assistant that answers questions about a knowledge graph from Freebase.
+            ("system", """You are an AI assistant that answers questions using a knowledge graph as context.
 
                 The knowledge graph contains entities and their relationships. Use the provided context to answer questions accurately.
 
@@ -28,21 +27,20 @@ class RAGGenerator:
                 {context}
 
                 Rules:
-                - Only use information from the provided context
-                - Be specific and mention entity names
-                - If the context doesn't contain enough information, say so clearly
-                - Format entity IDs like /m/xxx as readable names when possible"""),
+                - Answer the question using ONLY the information provided in the context
+                - Be specific and mention facts from the context
+                - If the context doesn't contain enough information, say "I don't have enough information to answer that question"
+                - Keep answers concise and relevant"""),
             ("human", "{question}")
         ])
         
         self.output_parser = StrOutputParser()
     
-    def generate(self, question: str, k: int = 10, depth: int = 2) -> Dict:
+    def generate(self, question: str, context: str) -> Dict:
         """Generate answer for a question"""
         try:
-            # Retrieve context
-            context = self.retriever.retrieve_context(question, k, depth)
-            
+            # Use provided context
+            logger.info(f"Using context for question '{question}': {context[:200]}...")
             # Generate answer
             messages = self.prompt.format_messages(
                 context=context,
