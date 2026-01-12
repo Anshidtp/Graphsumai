@@ -27,8 +27,10 @@ class RagGenerator:
                 {context}
 
                 Rules:
-                - Answer the question using ONLY the information provided in the context
+                - Answer the question using ONLY the information provided in the context and Answer naturally like you're talking to a friend
                 - Be specific and mention facts from the context
+                - Don't mention "relevance scores" or "knowledge graph"
+                - Don't list facts - synthesize them into natural sentences
                 - If the context doesn't contain enough information, say "I don't have enough information to answer that question"
                 - Keep answers concise and relevant"""),
             ("human", "{question}")
