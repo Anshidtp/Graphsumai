@@ -4,8 +4,7 @@ import logging
 
 from src.api.models import (
     QueryRequest, QueryResponse,
-    EntitySearchRequest, EntityResponse,
-    NeighborsRequest, GraphStatsResponse
+     GraphStatsResponse
 )
 from src.k_graph.graph_builder import GraphConstructor
 from config.settings import settings
