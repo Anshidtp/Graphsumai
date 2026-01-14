@@ -27,11 +27,8 @@
   - [Backend Setup](#backend-setup)
   - [Frontend Setup](#frontend-setup)
 - [Usage](#-usage)
-- [Configuration](#-configuration)
 - [API Documentation](#-api-documentation)
-- [Project Structure](#-project-structure)
 - [Troubleshooting](#-troubleshooting)
-- [Contributing](#-contributing)
 - [License](#-license)
 
 ---
@@ -107,31 +104,7 @@ Graph RAG enhances traditional RAG by using **knowledge graphs** instead of simp
 
 ### Screenshots
 
-```
-┌─────────────────────────────────────────────┐
-│  🧠 Knowledge Graph Explorer 💾             │
-│  📚 14,541 entities  ⚡ 272,115 facts       │
-├─────────────────────────────────────────────┤
-│                                             │
-│  💬 Chat Interface                          │
-│     ┌─────────────────────────────────┐    │
-│     │ 🤖 AI Assistant                 │    │
-│     │ Barack Obama is an American...  │    │
-│     │                                 │    │
-│     │ Related: Barack Obama, United   │    │
-│     │ States, Columbia University     │    │
-│     │ 💾 10 facts retrieved            │    │
-│     └─────────────────────────────────┘    │
-│                                             │
-│  💡 Smart Suggestions                       │
-│     "Who is Barack Obama?"                  │
-│     "What professions are in the database?" │
-│                                             │
-│  ✍️ Input Box                               │
-│     [Ask me anything...] [🚀 Send]          │
-│                                             │
-└─────────────────────────────────────────────┘
-```
+![demo](https://github.com/Anshidtp/Graphsumai/blob/main/sample_Images/demo_img.png)
 
 ---
 
