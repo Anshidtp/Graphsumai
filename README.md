@@ -420,37 +420,8 @@ curl -X POST "http://localhost:8000/api/v1/query" \
   -d '{"query":"Who is Barack Obama?","top_k":15}'
 ```
 
-#### 2. Search Entities
 
-**POST** `/search`
-
-Search for entities by name or partial match.
-
-**Request Body:**
-```json
-{
-  "search_term": "obama",
-  "limit": 10
-}
-```
-
-**Response:**
-```json
-{
-  "entities": [
-    {
-      "name": "Barack Obama",
-      "degree": 145
-    },
-    {
-      "name": "Michelle Obama",
-      "degree": 67
-    }
-  ]
-}
-```
-
-#### 3. Get Graph Statistics
+#### 2. Get Graph Statistics
 
 **GET** `/stats`
 
@@ -478,7 +449,7 @@ Get comprehensive statistics about the knowledge graph.
 }
 ```
 
-#### 4. Health Check
+#### 3. Health Check
 
 **GET** `/health`
 

@@ -17,27 +17,6 @@ class QueryResponse(BaseModel):
     status: str
 
 
-class EntitySearchRequest(BaseModel):
-    """Request model for entity search"""
-    search_term: str = Field(..., description="Search term")
-    limit: int = Field(10, ge=1, le=100)
-
-
-class EntityResponse(BaseModel):
-    """Response model for entity"""
-    id: str
-    name: str
-    description: Optional[str] = None
-    degree: int
-    aliases: List[str]
-
-
-class NeighborsRequest(BaseModel):
-    """Request model for neighbors"""
-    entity_id: str
-    limit: int = Field(50, ge=1, le=100)
-
-
 class GraphStatsResponse(BaseModel):
     """Response model for graph statistics"""
     entities: int

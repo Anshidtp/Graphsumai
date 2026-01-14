@@ -59,50 +59,6 @@ async def query_knowledge_graph(request: QueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/search", response_model=List[EntityResponse])
-async def search_entities(request: EntitySearchRequest):
-    """Search for entities by name or ID"""
-    try:
-        results = query_engine.search_entities(
-            request.search_term,
-            limit=request.limit
-        )
-        
-        return [
-            EntityResponse(
-                id=e['id'],
-                name=e.get('name', ''),
-                description=e.get('description'),
-                degree=e.get('degree', 0),
-                aliases=e.get('aliases', [])
-            )
-            for e in results
-        ]
-    
-    except Exception as e:
-        logger.error(f"Search error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/neighbors")
-async def get_neighbors(request: NeighborsRequest):
-    """Get neighbors of an entity"""
-    try:
-        neighbors = query_engine.get_neighbors(
-            request.entity_id,
-            limit=request.limit
-        )
-        
-        return {
-            'entity_id': request.entity_id,
-            'neighbors': neighbors
-        }
-    
-    except Exception as e:
-        logger.error(f"Neighbors error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.get("/stats", response_model=GraphStatsResponse)
 async def get_stats():
     """Get graph statistics"""
